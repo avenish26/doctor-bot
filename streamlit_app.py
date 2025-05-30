@@ -1,16 +1,20 @@
 import streamlit as st
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_ollama import OllamaLLM
-from langchain_core.prompts import PromptTemplate
+from langchain.prompts import PromptTemplate
 from langchain_core.runnables import RunnableSequence
+from langchain_openai import ChatOpenAI  # ✅ Use OpenAI instead of Ollama
+import os
 
-# Page setup
+# Load OpenAI API key securely from Streamlit Secrets
+openai_api_key = st.secrets["OPENAI_API_KEY"]
+
+# Set up Streamlit page
 st.set_page_config(page_title="Doctor Bot", page_icon="🩺")
 st.title("🧠 AI Doctor Bot (Lite Mode)")
 st.markdown("Ask medical questions — answers come from your PDF books.")
 
-# Load FAISS vector index (cached)
+# Load FAISS vector index
 @st.cache_resource
 def load_index():
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
@@ -19,10 +23,10 @@ def load_index():
 
 db = load_index()
 
-# Use lighter model (Mistral or Tiny model if needed)
-llm = OllamaLLM(model="mistral")
+# Set up OpenAI Chat model
+llm = ChatOpenAI(api_key=openai_api_key, model="gpt-3.5-turbo", temperature=0)
 
-# Optimized prompt
+# Prompt template
 prompt = PromptTemplate(
     input_variables=["context", "question"],
     template="""
@@ -35,15 +39,16 @@ Question: {question}
 Answer:"""
 )
 
+# Combine prompt and model
 qa_chain = prompt | llm
 
-# Input box
+# User input
 question = st.text_input("🩺 Enter a medical question:")
 
 if question:
     with st.spinner("Thinking... please wait..."):
-        docs = db.similarity_search(question, k=1)  # 🔽 reduced from k=4
-        context = docs[0].page_content if docs else "No matching info found."
+        docs = db.similarity_search(question, k=2)
+        context = "\n\n".join([doc.page_content for doc in docs]) if docs else "No matching context found."
         result = qa_chain.invoke({"context": context, "question": question})
         st.markdown("### 🤖 Doctor Bot says:")
         st.write(result)
